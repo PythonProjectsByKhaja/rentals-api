@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  # Cancel superseded runs on the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 20
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+      # The runner's database is ephemeral, so tests use it directly rather
+      # than a separate *_test database.
+      TEST_DATABASE_URL: postgresql+asyncpg://app:app@localhost:5432/app
+      # Fail rather than silently resolving a different interpreter.
+      UV_PYTHON: "3.14"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Install dependencies
+        # --frozen fails if uv.lock is out of date with pyproject.toml, which
+        # is what you want in CI.
+        run: uv sync --frozen
+
+      - name: Lint and type-check
+        run: uv run poe lint
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      - name: Check for un-migrated model changes
+        # env.py drops empty autogenerate output, so a new file appearing here
+        # means the models and migrations have drifted.
+        run: |
+          uv run alembic revision --autogenerate -m ci-drift-check
+          if [ -n "$(git status --porcelain alembic/versions)" ]; then
+            echo "::error::Models have changed without a migration."
+            git status --porcelain alembic/versions
+            exit 1
+          fi
+
+      - name: Test
+        run: uv run pytest -q --cov=rentals_api --cov-report=term-missing

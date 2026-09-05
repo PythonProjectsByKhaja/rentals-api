@@ -1,0 +1,15 @@
+# Keep line endings consistent across Windows, macOS and Linux checkouts.
+#
+# Without this, CRLF sneaks into shell scripts and Dockerfiles and breaks
+# shebangs inside Linux containers, and ruff format fights git forever.
+* text=auto eol=lf
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary

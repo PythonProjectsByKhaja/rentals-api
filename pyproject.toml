@@ -1,0 +1,190 @@
+[project]
+name = "rentals-api"
+version = "0.1.0"
+description = "A FastAPI service which lists rentals backed by PostgreSQL."
+readme = "README.md"
+requires-python = ">=3.14"
+authors = [{ name = "Khaja", email = "shaik.khaja.ibrahim@gmail.com" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+
+dependencies = [
+    "fastapi>=0.141",
+    "uvicorn[standard]>=0.52",
+    # The [asyncio] extra pulls in greenlet, which SQLAlchemy's async layer requires.
+    "sqlalchemy[asyncio]>=2.0.52",
+    "alembic>=1.19",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.15",
+    # >=0.31 is a hard floor: it is the first release with cp314 wheels. On 0.30
+    # and earlier, Python 3.14 falls back to a source build and needs a C compiler.
+    "asyncpg>=0.31",
+]
+
+[dependency-groups]
+# PEP 735 groups. uv installs `dev` by default; use --no-default-groups to skip.
+dev = [
+    "pytest>=9.1",
+    "pytest-asyncio>=1.4",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "ruff>=0.16",
+    "mypy>=2.3",
+    "poethepoet>=0.48",
+    "pre-commit>=4.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rentals_api"]
+
+# ---------------------------------------------------------------------------
+# Task runner
+#
+# `uv run poe <task>` behaves identically in bash, PowerShell, and on Linux.
+# Two rules keep it that way:
+#   * `cmd` strings never contain &&, |, >, * or $VAR -- poe splits them into an
+#     argument vector and runs them WITHOUT a shell.
+#   * multi-step tasks use `sequence`, because && is a parser error in
+#     Windows PowerShell 5.1.
+# Never use poe's `shell = "..."` task type here; it reintroduces the
+# /bin/sh-vs-cmd.exe split this whole setup exists to avoid.
+# ---------------------------------------------------------------------------
+[tool.poe]
+executor.type = "uv"
+# REQUIRED for `sequence` tasks. poethepoet defaults array items to "ref"
+# (a reference to another task), so a bare string like "ruff check ." fails with
+# "Includes reference to unknown task 'ruff'". This makes bare strings commands,
+# which is almost always what you want -- and it applies to sequences you add.
+default_array_item_task_type = "cmd"
+
+[tool.poe.tasks.dev]
+help = "Run the API with autoreload on http://127.0.0.1:8000"
+cmd = "uvicorn rentals_api.main:app --reload --host 127.0.0.1 --port 8000"
+
+[tool.poe.tasks.test]
+help = "Run the test suite"
+cmd = "pytest -q"
+
+[tool.poe.tasks.cov]
+help = "Run tests with a coverage report"
+cmd = "pytest --cov=rentals_api --cov-report=term-missing"
+
+[tool.poe.tasks.lint]
+help = "Lint, check formatting, and type-check"
+sequence = ["ruff check .", "ruff format --check .", "mypy src"]
+
+[tool.poe.tasks.fmt]
+help = "Auto-format and auto-fix"
+sequence = ["ruff format .", "ruff check --fix ."]
+
+[tool.poe.tasks.migrate]
+help = "Apply all pending migrations"
+cmd = "alembic upgrade head"
+
+[tool.poe.tasks.downgrade]
+help = "Roll back one migration"
+cmd = "alembic downgrade -1"
+
+[tool.poe.tasks.revision]
+help = "Autogenerate a migration (writes nothing if models match the DB)"
+cmd = "alembic revision --autogenerate -m ${message}"
+args = [{ name = "message", options = ["-m", "--message"], default = "auto" }]
+
+[tool.poe.tasks.up]
+help = "Start the database container"
+cmd = "docker compose up -d db"
+
+[tool.poe.tasks.down]
+help = "Stop the database container"
+cmd = "docker compose down"
+
+[tool.poe.tasks.bootstrap]
+help = "First-run setup: start the DB, then migrate"
+sequence = [
+    { cmd = "docker compose up -d db" },
+    { cmd = "alembic upgrade head" },
+]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",    # pycodestyle
+    "F",         # pyflakes
+    "I",         # isort
+    "N",         # pep8-naming
+    "UP",        # pyupgrade
+    "B",         # flake8-bugbear
+    "A",         # flake8-builtins
+    "C4",        # flake8-comprehensions
+    "SIM",       # flake8-simplify
+    "TID",       # flake8-tidy-imports
+    "RUF",       # ruff-specific
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# Architectural guard rail, enforced by the linter rather than by good intentions.
+#
+# Business logic must not know it is being served over HTTP, so importing FastAPI
+# is an error by default. The HTTP layer is the explicit exception list in
+# per-file-ignores below. If you add a new module that legitimately speaks HTTP,
+# add it there -- the friction is the point.
+"fastapi".msg = "Only the HTTP layer may import fastapi. Keep service.py framework-free."
+"starlette".msg = "Only the HTTP layer may import starlette. Keep service.py framework-free."
+
+[tool.ruff.lint.per-file-ignores]
+# The HTTP layer: allowed to import FastAPI.
+"src/*/main.py" = ["TID251"]
+"src/*/api/*.py" = ["TID251"]
+"src/*/**/router.py" = ["TID251"]
+"tests/**" = ["TID251"]
+# The Alembic aggregator exists purely for its import side effects.
+"src/*/db/base.py" = ["F401"]
+# Alembic's generated migrations are machine-written; don't fight them.
+"alembic/versions/*.py" = ["E501", "I001", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rentals_api"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.14"
+plugins = ["pydantic.mypy"]
+strict = true
+warn_unreachable = true
+# SQLAlchemy 2.0 needs no mypy plugin -- Mapped[] is natively typed.
+
+[[tool.mypy.overrides]]
+module = "alembic.*"
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# BOTH scopes must be "session". Setting only the fixture scope is the classic
+# mistake: the session-scoped engine and the function-scoped test then live in
+# different event loops, and asyncpg raises
+# "got Future <Future pending> attached to a different loop".
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+addopts = "-ra --strict-markers --strict-config"
+markers = ["integration: exercises a real database"]
+# Consider tightening this to ["error"] once you know which upstream warnings
+# your dependency set emits; as a blanket default it makes a fresh clone fail on
+# somebody else's DeprecationWarning.
+filterwarnings = ["default"]

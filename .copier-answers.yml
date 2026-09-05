@@ -1,0 +1,18 @@
+# This file is managed by Copier. Do not edit it by hand.
+# It records the answers used to generate this project so that
+#   copier update --trust
+# can pull in newer versions of the template while keeping your choices.
+_commit: c7bf02d
+_src_path: gh:PythonProjectsByKhaja/api_scaffolder_with_relational_db
+author_email: shaik.khaja.ibrahim@gmail.com
+author_name: Khaja
+database: postgresql
+db_driver: asyncpg
+license: Apache-2.0
+package_name: rentals_api
+project_description: A FastAPI service which lists rentals backed by PostgreSQL.
+project_name: rentals-api
+python_version: '3.14'
+use_ci: true
+use_docker: true
+use_precommit: true

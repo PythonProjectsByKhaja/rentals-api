@@ -1,0 +1,40 @@
+# Install once per clone:  uv run pre-commit install
+# Run against everything:  uv run pre-commit run --all-files
+#
+# Only `python` and `system` language hooks are used here. Shell-script hooks
+# would require Git Bash on PATH, which cannot be assumed on Windows.
+default_language_version:
+  python: python3.14
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.6
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.3.1
+    hooks:
+      - id: mypy
+        files: ^src/
+        # mypy needs the real dependencies to check anything useful, and
+        # pre-commit builds an isolated env per hook.
+        additional_dependencies:
+          - pydantic>=2.13
+          - pydantic-settings>=2.15
+          - sqlalchemy[asyncio]>=2.0.52
+          - fastapi>=0.141
