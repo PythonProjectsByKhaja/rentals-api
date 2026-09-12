@@ -91,7 +91,8 @@ cmd = "alembic downgrade -1"
 
 [tool.poe.tasks.revision]
 help = "Autogenerate a migration (writes nothing if models match the DB)"
-cmd = "alembic revision --autogenerate -m ${message}"
+# Quoted so poe does not word-split a message containing spaces.
+cmd = 'alembic revision --autogenerate -m "${message}"'
 args = [{ name = "message", options = ["-m", "--message"], default = "auto" }]
 
 [tool.poe.tasks.up]

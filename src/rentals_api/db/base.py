@@ -14,7 +14,20 @@ schema, so forgetting a line here fails the test suite rather than shipping.
 
 from __future__ import annotations
 
+from rentals_api.amenities.models import Amenity as Amenity
 from rentals_api.db.base_class import Base as Base
 from rentals_api.items.models import Item as Item
+from rentals_api.locations.models import Location as Location
+from rentals_api.properties.models import Property as Property
+from rentals_api.properties.models import PropertyAmenity as PropertyAmenity
+from rentals_api.properties.models import PropertyImage as PropertyImage
 
-__all__ = ["Base", "Item"]
+__all__ = [
+    "Amenity",
+    "Base",
+    "Item",
+    "Location",
+    "Property",
+    "PropertyAmenity",
+    "PropertyImage",
+]

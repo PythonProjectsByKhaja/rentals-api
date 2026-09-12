@@ -2,20 +2,50 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from rentals_api.amenities.exceptions import (
+    AmenityInUseError,
+    AmenityNotFoundError,
+    DuplicateAmenityNameError,
+)
 from rentals_api.api.health import router as health_router
 from rentals_api.api.router import api_router
 from rentals_api.core.config import get_settings
 from rentals_api.core.logging import configure_logging
 from rentals_api.db.session import engine
 from rentals_api.items.exceptions import ItemNotFoundError
+from rentals_api.locations.exceptions import LocationInUseError, LocationNotFoundError
+from rentals_api.properties.exceptions import (
+    PropertyImageNotFoundError,
+    PropertyNotFoundError,
+    UnknownAmenitiesError,
+    UnknownLocationError,
+)
 
 settings = get_settings()
+
+# Domain error -> HTTP status code. This table is the ONLY place status codes for
+# domain errors are decided, which is what lets services stay framework-free:
+# they raise meaning, and main.py maps it. A new domain error needs one line here.
+DOMAIN_ERROR_STATUS: dict[type[Exception], int] = {
+    ItemNotFoundError: status.HTTP_404_NOT_FOUND,
+    LocationNotFoundError: status.HTTP_404_NOT_FOUND,
+    AmenityNotFoundError: status.HTTP_404_NOT_FOUND,
+    PropertyNotFoundError: status.HTTP_404_NOT_FOUND,
+    PropertyImageNotFoundError: status.HTTP_404_NOT_FOUND,
+    DuplicateAmenityNameError: status.HTTP_409_CONFLICT,
+    LocationInUseError: status.HTTP_409_CONFLICT,
+    AmenityInUseError: status.HTTP_409_CONFLICT,
+    # The body names a row that does not exist. The request itself is well
+    # formed, so this is 422, not 404, which would suggest the URL was wrong.
+    UnknownLocationError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    UnknownAmenitiesError: status.HTTP_422_UNPROCESSABLE_CONTENT,
+}
 
 
 @asynccontextmanager
@@ -45,13 +75,19 @@ app = FastAPI(
 )
 
 
-@app.exception_handler(ItemNotFoundError)
-async def item_not_found_handler(request: Request, exc: ItemNotFoundError) -> JSONResponse:
-    """Map a domain error to HTTP, so the service layer never imports FastAPI."""
-    return JSONResponse(
-        status_code=status.HTTP_404_NOT_FOUND,
-        content={"detail": str(exc)},
-    )
+def _domain_error_handler(
+    status_code: int,
+) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    """Build a handler that renders a domain error as ``{"detail": "<message>"}``."""
+
+    async def handler(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=status_code, content={"detail": str(exc)})
+
+    return handler
+
+
+for error_class, error_status in DOMAIN_ERROR_STATUS.items():
+    app.add_exception_handler(error_class, _domain_error_handler(error_status))
 
 
 @app.get("/", tags=["root"])
